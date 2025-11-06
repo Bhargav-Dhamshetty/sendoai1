@@ -1,6 +1,11 @@
 # Environment Variables
 .env
+.env.*
 .env.local
+.env.n8n
+*/.env
+*/.env.*
+n8n-workflows/.env*
 
 # Dependencies
 node_modules/
