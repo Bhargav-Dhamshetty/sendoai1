@@ -1,0 +1,571 @@
+{
+  "name": "Sendora AI - LinkedIn Outreach Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "outreach-trigger",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-trigger-001",
+      "name": "Webhook - Prospect Data Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sendora-outreach-webhook",
+      "notes": "Accepts: firstName, lastName, companyName, website, phone, LinkedInURL, email, notes"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming webhook data with flexible field handling\nconst inputData = $input.item.json;\n\n// Handle different field name formats\nconst firstName = inputData.firstName || inputData.first_name || inputData.firstname || 'Unknown';\nconst lastName = inputData.lastName || inputData.last_name || inputData.lastname || '';\nconst companyName = inputData.companyName || inputData.company_name || inputData.company || 'Unknown Company';\nconst website = inputData.website || inputData.company_website || inputData.url || '';\nconst phone = inputData.phone || inputData.phone_number || inputData.phoneNumber || '';\nconst linkedInURL = inputData.LinkedInURL || inputData.linkedin_url || inputData.linkedinUrl || inputData.linkedin || '';\nconst email = inputData.email || inputData.email_address || inputData.emailAddress || '';\n\n// Email validation (warn but don't throw)\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst isValidEmail = email && emailRegex.test(email);\n\n// Phone validation (basic, warn but don't throw)\nconst phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\\s.]?[(]?[0-9]{1,4}[)]?[-\\s.]?[0-9]{1,9}$/;\nconst isValidPhone = phone && phoneRegex.test(phone);\n\n// LinkedIn URL validation (flexible)\nconst isValidLinkedIn = linkedInURL && (linkedInURL.includes('linkedin.com') || linkedInURL.includes('linkedin'));\n\n// Sanitize and format data with fallbacks\nconst sanitizedData = {\n  firstName: firstName ? String(firstName).trim() : 'Unknown',\n  lastName: lastName ? String(lastName).trim() : '',\n  fullName: `${firstName ? String(firstName).trim() : 'Unknown'} ${lastName ? String(lastName).trim() : ''}`.trim(),\n  companyName: companyName ? String(companyName).trim() : 'Unknown Company',\n  website: website ? String(website).trim().replace(/\\/$/, '') : '',\n  phone: phone ? String(phone).replace(/\\D/g, '') : '',\n  phoneFormatted: phone ? String(phone) : '',\n  LinkedInURL: linkedInURL ? String(linkedInURL).trim() : '',\n  email: email ? String(email).toLowerCase().trim() : '',\n  notes: inputData.notes || '',\n  requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  timestamp: new Date().toISOString(),\n  status: 'processing',\n  validationWarnings: [\n    !isValidEmail && email ? 'Invalid email format' : null,\n    !isValidPhone && phone ? 'Invalid phone format' : null,\n    !isValidLinkedIn && linkedInURL ? 'Invalid LinkedIn URL' : null\n  ].filter(Boolean)\n};\n\nreturn [{ json: sanitizedData }];"
+      },
+      "id": "js-validate-input-002",
+      "name": "JS - Validate & Sanitize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Validates all required fields, sanitizes data, generates request ID"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.website && ($json.website.startsWith('http://') || $json.website.startsWith('https://')) ? $json.website : 'https://example.com' }}",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-fetch-company-002a",
+      "name": "HTTP - Fetch Company Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [550, 200],
+      "notes": "Fetches HTML from company website with URL validation"
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "data",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "pageTitle",
+              "cssSelector": "title",
+              "returnValue": "text"
+            },
+            {
+              "key": "metaDescription",
+              "cssSelector": "meta[name='description']",
+              "returnValue": "attribute",
+              "attribute": "content"
+            },
+            {
+              "key": "companyInfo",
+              "cssSelector": ".about, #about, .company-description, [class*='about'], [id*='about']",
+              "returnValue": "text"
+            },
+            {
+              "key": "services",
+              "cssSelector": ".services, #services, .offerings, [class*='service'], [id*='service']",
+              "returnValue": "text"
+            }
+          ]
+        }
+      },
+      "id": "webscraper-company-003",
+      "name": "WebScraper - Company Website",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [750, 200],
+      "notes": "Scrapes company website for personalization data"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.LinkedInURL && ($json.LinkedInURL.startsWith('http://') || $json.LinkedInURL.startsWith('https://')) ? $json.LinkedInURL : 'https://linkedin.com' }}",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-fetch-linkedin-003a",
+      "name": "HTTP - Fetch LinkedIn Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [550, 400],
+      "notes": "Fetches HTML from LinkedIn profile with URL validation"
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "data",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "profileHeadline",
+              "cssSelector": ".top-card-layout__headline, .top-card__headline, [class*='headline']",
+              "returnValue": "text"
+            },
+            {
+              "key": "recentActivity",
+              "cssSelector": ".feed-shared-update-v2__description, .feed-update, [class*='activity']",
+              "returnValue": "text"
+            },
+            {
+              "key": "profileSummary",
+              "cssSelector": ".summary, .about, [class*='summary']",
+              "returnValue": "text"
+            }
+          ]
+        }
+      },
+      "id": "webscraper-linkedin-004",
+      "name": "WebScraper - LinkedIn Profile",
+      "type": "n8n-nodes-base.htmlExtract",
+      "typeVersion": 1,
+      "position": [750, 400],
+      "notes": "Scrapes LinkedIn profile for recent posts and activity"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all collected data and format dynamic prompt\n// Safe data retrieval with fallbacks\nlet prospectData, companyData, linkedinData;\n\ntry {\n  // Try to get prospect data from previous node\n  prospectData = $('JS - Validate & Sanitize Input').item.json;\n} catch (e) {\n  prospectData = $input.first().json;\n}\n\ntry {\n  // Try to get company data if that path executed\n  companyData = $('WebScraper - Company Website').item.json || {};\n} catch (e) {\n  companyData = {};\n}\n\ntry {\n  // Try to get LinkedIn data if that path executed\n  linkedinData = $('WebScraper - LinkedIn Profile').item.json || {};\n} catch (e) {\n  linkedinData = {};\n}\n\n// Extract key information with fallbacks\nconst companyInfo = companyData.companyInfo || companyData.metaDescription || 'No company info available';\nconst services = companyData.services || 'General services';\nconst profileHeadline = linkedinData.profileHeadline || 'Professional';\nconst recentActivity = linkedinData.recentActivity || 'No recent activity';\n\n// Build enriched context\nconst enrichedContext = {\n  prospect: {\n    name: prospectData.fullName,\n    firstName: prospectData.firstName,\n    lastName: prospectData.lastName,\n    title: profileHeadline,\n    linkedIn: prospectData.LinkedInURL,\n    email: prospectData.email,\n    phone: prospectData.phoneFormatted\n  },\n  company: {\n    name: prospectData.companyName,\n    website: prospectData.website,\n    description: String(companyInfo).substring(0, 500),\n    services: String(services).substring(0, 300),\n    pageTitle: companyData.pageTitle || prospectData.companyName\n  },\n  linkedin: {\n    headline: profileHeadline,\n    recentActivity: String(recentActivity).substring(0, 400),\n    summary: linkedinData.profileSummary?.substring(0, 400) || ''\n  },\n  customNotes: prospectData.notes\n};\n\n// Format the dynamic prompt for Gemini API\nconst dynamicPrompt = `Generate a highly personalized LinkedIn outreach sequence for ${enrichedContext.company.name}.\n\nPROSPECT INFORMATION:\n- Name: ${enrichedContext.prospect.name}\n- Title: ${enrichedContext.prospect.title}\n- LinkedIn Profile: ${enrichedContext.prospect.linkedIn}\n- Company: ${enrichedContext.company.name} (${enrichedContext.company.website})\n\nCOMPANY CONTEXT:\n${enrichedContext.company.description}\n\nSERVICES/OFFERINGS:\n${enrichedContext.company.services}\n\nLINKEDIN INSIGHTS:\n- Current Role: ${enrichedContext.linkedin.headline}\n- Recent Activity: ${enrichedContext.linkedin.recentActivity}\n\nADDITIONAL NOTES:\n${enrichedContext.customNotes}\n\nTASK:\nCreate a 3-message LinkedIn outreach sequence that:\n1. Opens with a personalized hook based on their recent activity or company news\n2. Provides value by addressing a specific pain point in their industry\n3. Includes a clear, low-friction call-to-action\n4. Uses a conversational, authentic tone (not salesy)\n5. References specific details from their profile or company\n\nFormat the response as:\n{\n  \"message1\": \"...\",\n  \"message2\": \"...\",\n  \"message3\": \"...\",\n  \"subject_line\": \"...\",\n  \"strategy_notes\": \"...\"\n}`;\n\n// Prepare payload for Gemini API\nconst geminiPayload = {\n  prompt: dynamicPrompt,\n  maxRetries: 3,\n  metadata: {\n    requestId: prospectData.requestId,\n    prospectName: prospectData.fullName,\n    companyName: prospectData.companyName,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn [{\n  json: {\n    ...prospectData,\n    enrichedContext,\n    geminiPayload,\n    promptLength: dynamicPrompt.length\n  }\n}];"
+      },
+      "id": "js-format-prompt-005",
+      "name": "JS - Format Dynamic Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [950, 300],
+      "notes": "Merges scraped data and formats enriched prompt for Gemini API"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Use n8n's built-in HTTP helper to call Gemini API\nconst prospectData = $input.item.json;\nconst prompt = prospectData.geminiPayload.prompt;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://sendo-wine.vercel.app/generate',\n    body: {\n      prompt: prompt\n    },\n    json: true\n  });\n  \n  return [{\n    json: {\n      ...prospectData,\n      success: response.success,\n      response: response.response,\n      keyUsed: response.keyUsed,\n      processingTime: response.duration\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      ...prospectData,\n      success: false,\n      error: error.message,\n      response: null\n    }\n  }];\n}\n"
+      },
+      "id": "http-gemini-api-006",
+      "name": "CODE - Call Gemini API Server",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Calls your Vercel-deployed Gemini server with formatted prompt using Code node"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and parse Gemini API response with HARDCODED FALLBACK MESSAGES\nconst prospectData = $('JS - Format Dynamic Prompt').item.json;\nconst apiResponse = $input.item.json;\n\n// HARDCODED FALLBACK MESSAGES (5 variations)\nconst fallbackMessages = [\n  {\n    message1: \"Hi ${firstName}, I noticed ${companyName}'s impressive growth in the industry. I specialize in helping companies like yours streamline operations through AI-powered automation. Would you be open to a brief conversation about how we've helped similar organizations reduce manual workload by 40%?\",\n    message2: \"Following up on my previous message. We've developed a proven system that integrates seamlessly with existing workflows. Our clients typically see ROI within 3 months. I'd love to share a quick case study relevant to ${companyName}. Are you available for a 15-minute call this week?\",\n    message3: \"Last follow-up! I understand you're busy. If automation and efficiency aren't priorities right now, no worries. But if you'd like to explore how we can save your team 10+ hours per week, just reply with a time that works. Looking forward to connecting!\",\n    subject_line: \"Quick thought on ${companyName}: AI automation opportunity\"\n  },\n  {\n    message1: \"${firstName}, congratulations on ${companyName}'s recent achievements! I've been working with companies in your space to implement AI solutions that enhance productivity. Would you be interested in learning how we've helped businesses double their output without increasing headcount?\",\n    message2: \"Hope you had a chance to review my previous message. We specialize in custom AI implementations tailored to your industry. I'd love to schedule a brief demo showing real results from companies similar to ${companyName}. Does next Tuesday or Thursday work for you?\",\n    message3: \"Final note: I respect your time and inbox. If AI-driven growth isn't on your radar right now, I completely understand. But if you're curious about cutting costs while scaling up, let's chat for 10 minutes. Just say the word!\",\n    subject_line: \"${companyName} + AI: A growth opportunity\"\n  },\n  {\n    message1: \"Hey ${firstName}, I came across ${companyName} and was impressed by your innovative approach. We help organizations leverage AI to automate repetitive tasks and focus on strategic growth. Would you be open to exploring how this could benefit your team?\",\n    message2: \"Circling back on my last message. Our platform has helped companies in your sector increase efficiency by 50% in under 6 months. I'd love to share specific examples and discuss how we can customize a solution for ${companyName}. Can we schedule a quick call?\",\n    message3: \"Last reach out: I know you're swamped, but I genuinely believe our AI solutions could transform how ${companyName} operates. If you're even slightly curious, let's hop on a 15-minute call. No pressure, just valuable insights. What do you say?\",\n    subject_line: \"Transform ${companyName} with AI automation\"\n  },\n  {\n    message1: \"${firstName}, I specialize in helping companies like ${companyName} unlock hidden potential through intelligent automation. We've worked with industry leaders to reduce costs by 30% while improving output quality. Would you be interested in learning more about our approach?\",\n    message2: \"Following up to see if you had a moment to consider my proposal. We offer a free consultation where we analyze your current workflows and identify automation opportunities specific to ${companyName}. Are you available for a brief discovery call this week?\",\n    message3: \"Final message: I don't want to clutter your inbox, but I truly believe we can add significant value to ${companyName}. If you're open to a no-commitment conversation about AI and automation, I'm here. Otherwise, I wish you continued success!\",\n    subject_line: \"Unlock ${companyName}'s potential with AI\"\n  },\n  {\n    message1: \"Hi ${firstName}, I've been following ${companyName}'s journey and I'm impressed. We help ambitious companies integrate AI solutions that drive measurable results. Our clients report saving 15+ hours per week on average. Would you be open to a conversation about how this could work for you?\",\n    message2: \"Quick follow-up: We offer a proven framework for implementing AI automation without disrupting your current operations. I'd love to walk you through a customized strategy for ${companyName}. Can we schedule 20 minutes to discuss? I promise it'll be worth your time.\",\n    message3: \"Last note: I completely understand if now isn't the right time. But if you're even remotely curious about how AI can accelerate ${companyName}'s growth, let's connect. A simple 'yes' and I'll send you our calendar link. Excited to potentially work together!\",\n    subject_line: \"${companyName}: Ready to scale with AI?\"\n  }\n];\n\n// Select a random fallback message\nconst randomIndex = Math.floor(Math.random() * fallbackMessages.length);\nconst selectedFallback = fallbackMessages[randomIndex];\n\n// Replace placeholders in fallback messages\nconst firstName = prospectData.firstName || 'there';\nconst companyName = prospectData.companyName || 'your company';\n\nconst processedFallback = {\n  message1: selectedFallback.message1.replace(/\\$\\{firstName\\}/g, firstName).replace(/\\$\\{companyName\\}/g, companyName),\n  message2: selectedFallback.message2.replace(/\\$\\{firstName\\}/g, firstName).replace(/\\$\\{companyName\\}/g, companyName),\n  message3: selectedFallback.message3.replace(/\\$\\{firstName\\}/g, firstName).replace(/\\$\\{companyName\\}/g, companyName),\n  subject_line: selectedFallback.subject_line.replace(/\\$\\{firstName\\}/g, firstName).replace(/\\$\\{companyName\\}/g, companyName)\n};\n\n// DEBUG: Log response type\nconsole.log('=== API RESPONSE DEBUG ===');\nconsole.log('Response type:', typeof apiResponse.response);\nconsole.log('Response exists:', !!apiResponse.response);\nif (apiResponse.response) {\n  const responseStr = JSON.stringify(apiResponse.response);\n  console.log('Response value:', responseStr ? responseStr.substring(0, 200) : 'empty');\n} else {\n  console.log('Response value: NULL/UNDEFINED');\n}\n\n// Check if API call was successful (flexible)\nconst isSuccess = apiResponse.success !== false && apiResponse.response;\n\nif (!isSuccess) {\n  // USE FALLBACK MESSAGES\n  console.warn('Gemini API Warning - Using fallback message #' + (randomIndex + 1));\n  return [{\n    json: {\n      requestId: prospectData.requestId,\n      prospectName: prospectData.fullName,\n      companyName: prospectData.companyName,\n      aiResponse: processedFallback,\n      validation: {\n        isValid: true,\n        usingFallback: true,\n        fallbackIndex: randomIndex + 1,\n        hasMessage1: true,\n        hasMessage2: true,\n        hasMessage3: true\n      },\n      status: 'fallback_used',\n      ...prospectData\n    }\n  }];\n}\n\n// Extract AI-generated content\nlet aiContent;\ntry {\n  // Try to parse if response is JSON string\n  if (typeof apiResponse.response === 'string') {\n    console.log('Response is STRING, parsing...');\n    aiContent = JSON.parse(apiResponse.response);\n  } else {\n    console.log('Response is OBJECT, using directly');\n    aiContent = apiResponse.response;\n  }\n  if (aiContent) {\n    const contentStr = JSON.stringify(aiContent);\n    console.log('aiContent:', contentStr ? contentStr.substring(0, 200) : 'empty');\n  } else {\n    console.log('aiContent: NULL - Using fallback');\n    aiContent = processedFallback;\n  }\n} catch (e) {\n  console.error('Parse error - Using fallback:', e.message);\n  aiContent = processedFallback;\n}\n\n// Ensure required fields exist with fallbacks\naiContent.message1 = aiContent.message1 || processedFallback.message1;\naiContent.message2 = aiContent.message2 || processedFallback.message2;\naiContent.message3 = aiContent.message3 || processedFallback.message3;\naiContent.subject_line = aiContent.subject_line || processedFallback.subject_line;\n\n// Validation checks\nconst validationResults = {\n  hasMessage1: !!(aiContent.message1 && aiContent.message1.length > 20),\n  hasMessage2: !!(aiContent.message2 && aiContent.message2.length > 20),\n  hasMessage3: !!(aiContent.message3 && aiContent.message3.length > 20),\n  hasSubjectLine: !!(aiContent.subject_line),\n  totalLength: JSON.stringify(aiContent).length,\n  isValid: true,\n  usingFallback: aiContent === processedFallback\n};\n\n// Prepare validated response\nconst validatedResponse = {\n  requestId: prospectData.requestId,\n  prospectName: prospectData.fullName,\n  companyName: prospectData.companyName,\n  firstName: firstName,\n  aiResponse: aiContent,\n  validation: validationResults,\n  apiMetadata: {\n    keyUsed: apiResponse.keyUsed || 'fallback',\n    processingTime: apiResponse.processingTime || 0,\n    timestamp: new Date().toISOString()\n  },\n  status: 'validated',\n  ...prospectData\n};\n\nreturn [{ json: validatedResponse }];"
+      },
+      "id": "js-validate-response-007",
+      "name": "JS - Validate AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "notes": "Validates AI response structure and content quality"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sentiment Analysis on AI-generated messages\nconst inputData = $input.item.json;\nconst aiResponse = inputData.aiResponse || {};\n\n// Extract messages\nconst message1 = aiResponse.message1 || '';\nconst message2 = aiResponse.message2 || '';\nconst message3 = aiResponse.message3 || '';\nconst allMessages = `${message1} ${message2} ${message3}`;\n\n// Sentiment word dictionaries\nconst positiveWords = [\n  'excited', 'happy', 'great', 'excellent', 'amazing', 'wonderful',\n  'fantastic', 'opportunity', 'growth', 'success', 'innovative',\n  'valuable', 'benefit', 'improve', 'help', 'support', 'achieve',\n  'powerful', 'effective', 'collaborate', 'partner'\n];\n\nconst negativeWords = [\n  'problem', 'issue', 'difficulty', 'challenge', 'struggle',\n  'hard', 'complex', 'confusing', 'waste', 'lose', 'fail'\n];\n\nconst neutralWords = [\n  'discuss', 'explore', 'consider', 'review', 'analyze',\n  'understand', 'learn', 'discover', 'connect', 'meet'\n];\n\n// Count sentiment words\nconst textLower = allMessages.toLowerCase();\nconst positiveCount = positiveWords.filter(word => textLower.includes(word)).length;\nconst negativeCount = negativeWords.filter(word => textLower.includes(word)).length;\nconst neutralCount = neutralWords.filter(word => textLower.includes(word)).length;\n\n// Calculate sentiment score (-1 to 1)\nconst totalSentimentWords = positiveCount + negativeCount + neutralCount;\nconst sentimentScore = totalSentimentWords > 0 \n  ? (positiveCount - negativeCount) / totalSentimentWords \n  : 0.0;\n\n// Determine overall sentiment\nlet overallSentiment;\nif (sentimentScore > 0.2) {\n  overallSentiment = 'positive';\n} else if (sentimentScore < -0.2) {\n  overallSentiment = 'negative';\n} else {\n  overallSentiment = 'neutral';\n}\n\n// Analyze tone characteristics\nconst toneAnalysis = {\n  formality: ['please', 'kindly', 'would you', 'could you'].some(word => textLower.includes(word)) \n    ? 'professional' : 'casual',\n  urgency: ['urgent', 'immediately', 'asap', 'quickly'].some(word => textLower.includes(word)) \n    ? 'high' : 'normal',\n  personalization_level: textLower.includes((inputData.companyName || '').toLowerCase()) \n    ? 'high' : 'medium'\n};\n\n// Word count analysis\nconst wordCount = allMessages.split(/\\s+/).filter(word => word.length > 0).length;\nconst sentenceCount = Math.max((allMessages.match(/\\./g) || []).length, 1);\nconst avgSentenceLength = wordCount / sentenceCount;\n\n// Readability score (simplified Flesch reading ease approximation)\nconst readabilityScore = 206.835 - 1.015 * avgSentenceLength;\n\nconst sentimentAnalysis = {\n  overall_sentiment: overallSentiment,\n  sentiment_score: Math.round(sentimentScore * 1000) / 1000,\n  positive_count: positiveCount,\n  negative_count: negativeCount,\n  neutral_count: neutralCount,\n  tone_analysis: toneAnalysis,\n  metrics: {\n    word_count: wordCount,\n    avg_sentence_length: Math.round(avgSentenceLength * 10) / 10,\n    readability_score: Math.round(readabilityScore * 10) / 10\n  },\n  recommendation: (sentimentScore > -0.1 && wordCount > 100) ? 'Approved' : 'Needs Review',\n  timestamp: inputData.timestamp\n};\n\nreturn [{ json: { ...inputData, sentimentAnalysis } }];"
+      },
+      "id": "python-sentiment-008",
+      "name": "JS - Sentiment Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 200],
+      "notes": "Analyzes sentiment and tone of AI-generated messages (converted from Python)"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Entity Extraction - Extract key entities from AI response\nconst inputData = $input.item.json;\nconst aiResponse = inputData.aiResponse || {};\nconst prospect = (inputData.enrichedContext || {}).prospect || {};\nconst company = (inputData.enrichedContext || {}).company || {};\n\n// Combine all messages\nconst message1 = aiResponse.message1 || '';\nconst message2 = aiResponse.message2 || '';\nconst message3 = aiResponse.message3 || '';\nconst allText = `${message1} ${message2} ${message3}`;\n\n// Initialize entities object\nconst entities = {\n  person_names: [],\n  company_names: [],\n  technologies: [],\n  action_verbs: [],\n  pain_points: [],\n  value_propositions: [],\n  call_to_actions: []\n};\n\n// Person names (capitalized words)\nconst namePattern = /\\b[A-Z][a-z]+\\s[A-Z][a-z]+\\b/g;\nconst names = allText.match(namePattern) || [];\nentities.person_names = [...new Set(names)];\n\n// Company names (from context)\nif (company.name) {\n  entities.company_names.push(company.name);\n}\n\n// Technologies (common tech keywords)\nconst techKeywords = ['AI', 'automation', 'cloud', 'API', 'platform', 'software',\n                      'system', 'solution', 'tool', 'analytics', 'data', 'CRM'];\nentities.technologies = techKeywords.filter(tech => \n  allText.toLowerCase().includes(tech.toLowerCase())\n);\n\n// Action verbs (strong CTAs)\nconst actionVerbs = ['schedule', 'book', 'connect', 'discuss', 'explore', 'call',\n                     'meet', 'review', 'discover', 'learn', 'share'];\nentities.action_verbs = actionVerbs.filter(verb => \n  allText.toLowerCase().includes(verb)\n);\n\n// Pain points (problem-related phrases)\nconst painKeywords = ['challenge', 'problem', 'difficulty', 'struggle', 'issue',\n                      'bottleneck', 'inefficiency', 'manual', 'time-consuming'];\nentities.pain_points = painKeywords.filter(pain => \n  allText.toLowerCase().includes(pain)\n);\n\n// Value propositions (benefit phrases)\nconst valueKeywords = ['increase', 'improve', 'reduce', 'save', 'optimize', 'grow',\n                       'enhance', 'streamline', 'automate', 'scale', 'revenue'];\nentities.value_propositions = valueKeywords.filter(value => \n  allText.toLowerCase().includes(value)\n);\n\n// Call to actions (extract sentences with action verbs)\nconst sentences = allText.split(/[.!?]/);\nentities.call_to_actions = sentences.filter(sentence => \n  actionVerbs.some(verb => sentence.toLowerCase().includes(verb))\n).map(s => s.trim()).filter(s => s.length > 0);\n\n// Calculate entity richness score\nconst entityScore = \n  entities.technologies.length * 2 +\n  entities.pain_points.length * 3 +\n  entities.value_propositions.length * 3 +\n  entities.call_to_actions.length * 5;\n\nconst entityExtraction = {\n  entities: entities,\n  entity_counts: {\n    total_entities: Object.values(entities).reduce((sum, arr) => sum + arr.length, 0),\n    person_names: entities.person_names.length,\n    company_names: entities.company_names.length,\n    technologies: entities.technologies.length,\n    action_verbs: entities.action_verbs.length,\n    ctas: entities.call_to_actions.length\n  },\n  entity_richness_score: entityScore,\n  quality_rating: entityScore > 15 ? 'excellent' : (entityScore > 10 ? 'good' : 'needs_improvement')\n};\n\nreturn { ...inputData, entityExtraction };"
+      },
+      "id": "python-entity-extraction-009",
+      "name": "JS - Entity Extraction",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 400],
+      "notes": "Extracts key entities: names, technologies, pain points, CTAs (converted from Python)"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "prospects",
+        "options": {},
+        "columns": {
+          "mappings": [
+            {
+              "column": "request_id",
+              "value": "={{ $json.requestId || 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9) }}"
+            },
+            {
+              "column": "linkedin_url",
+              "value": "={{ $json.LinkedInURL || '' }}"
+            },
+            {
+              "column": "name",
+              "value": "={{ $json.fullName || 'Unknown' }}"
+            },
+            {
+              "column": "title",
+              "value": "={{ $json.title || 'Unknown' }}"
+            },
+            {
+              "column": "company",
+              "value": "={{ $json.companyName || 'Unknown' }}"
+            },
+            {
+              "column": "location",
+              "value": "={{ $json.location || 'Unknown' }}"
+            },
+            {
+              "column": "about",
+              "value": "={{ $json.about || '' }}"
+            },
+            {
+              "column": "sentiment_score",
+              "value": "={{ $json.sentimentAnalysis ? $json.sentimentAnalysis.sentiment_score : 0 }}"
+            },
+            {
+              "column": "engagement_level",
+              "value": "={{ $json.sentimentAnalysis ? $json.sentimentAnalysis.overall_sentiment : 'neutral' }}"
+            },
+            {
+              "column": "contact_priority",
+              "value": "={{ $json.entityExtraction ? $json.entityExtraction.entity_richness_score : 0 }}"
+            }
+          ]
+        }
+      },
+      "id": "supabase-store-messages-010",
+      "name": "Supabase - Store Prospect Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Connection"
+        }
+      },
+      "notes": "Stores prospect data with enrichment in prospects table",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "mechconect18@gmail.com",
+        "toEmail": "godbhargav@gmail.com",
+        "subject": "=🚀 Your Personalized LinkedIn Outreach - {{ $json.companyName || 'Your Company' }}",
+        "emailType": "html",
+        "text": "",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }\n    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center; }\n    .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-radius: 0 0 10px 10px; }\n    .message-box { background: white; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0; border-radius: 5px; }\n    .cta-button { display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }\n    .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>🚀 Sendora AI</h1>\n    <p>Your Personalized LinkedIn Outreach Sequence</p>\n  </div>\n  \n  <div class=\"content\">\n    <h2>Hi {{ $json.firstName || 'there' }},</h2>\n    \n    <p>We've crafted a personalized LinkedIn outreach sequence for <strong>{{ $json.companyName || 'your company' }}</strong>. Here are your AI-generated messages:</p>\n    \n    <div class=\"message-box\">\n      <h3>Message 1: Opening</h3>\n      <p>{{ ($json.aiResponse && $json.aiResponse.message1) || 'Message 1' }}</p>\n    </div>\n    \n    <div class=\"message-box\">\n      <h3>Message 2: Value Proposition</h3>\n      <p>{{ ($json.aiResponse && $json.aiResponse.message2) || 'Message 2' }}</p>\n    </div>\n    \n    <div class=\"message-box\">\n      <h3>Message 3: Call-to-Action</h3>\n      <p>{{ ($json.aiResponse && $json.aiResponse.message3) || 'Message 3' }}</p>\n    </div>\n    \n    <div style=\"background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0;\">\n      <h4>📊 Quality Metrics:</h4>\n      <ul>\n        <li>Sentiment: {{ ($json.sentimentAnalysis && $json.sentimentAnalysis.overall_sentiment) || 'positive' }} ({{ ($json.sentimentAnalysis && $json.sentimentAnalysis.sentiment_score) || '0.5' }})</li>\n        <li>Entity Richness: {{ ($json.entityExtraction && $json.entityExtraction.quality_rating) || 'good' }}</li>\n        <li>Word Count: {{ ($json.sentimentAnalysis && $json.sentimentAnalysis.metrics && $json.sentimentAnalysis.metrics.word_count) || '0' }}</li>\n      </ul>\n    </div>\n    \n    <p><strong>Suggested Subject Line:</strong> {{ ($json.aiResponse && $json.aiResponse.subject_line) || 'Follow up' }}</p>\n    \n    <a href=\"https://linkedin.com\" class=\"cta-button\">Start Your Outreach →</a>\n  </div>\n  \n  <div class=\"footer\">\n    <p>Powered by Sendora AI | Gemini API | {{ $now.format('YYYY') }}</p>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "email-send-012",
+      "name": "Email - Send via Brevo SMTP",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1850, 200],
+      "credentials": {
+        "smtp": {
+          "name": "Brevo SMTP Connection"
+        }
+      },
+      "notes": "Sends formatted email with validated recipient and fallback data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.retellai.com/v2/create-phone-call",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"agent_id\": \"agent_ea295365c16d68879208dc6bba\",\n  \"to_number\": \"{{ $json.phone && $json.phone.startsWith('+') ? $json.phone : '+1' + String($json.phone).replace(/\\D/g, '') }}\",\n  \"from_number\": \"+18885551234\",\n  \"metadata\": {{ JSON.stringify({ requestId: $json.requestId || 'unknown', prospectName: $json.fullName || 'Unknown', companyName: $json.companyName || 'Unknown' }) }},\n  \"voice_id\": \"11labs-Adrian\",\n  \"voice_temperature\": 0.8,\n  \"voice_speed\": 1.0,\n  \"llm_id\": \"llm_5d00b1f3905454099e169d886c32\",\n  \"retell_llm_dynamic_variables\": {{ JSON.stringify({\n    prospect_name: $json.firstName || 'there',\n    company_name: $json.companyName || 'your company',\n    ai_message: ($json.aiResponse && $json.aiResponse.message1) || 'Hello',\n    pain_points: (($json.entityExtraction && $json.entityExtraction.entities && $json.entityExtraction.entities.pain_points) || []).join(', ') || 'business challenges',\n    value_props: (($json.entityExtraction && $json.entityExtraction.entities && $json.entityExtraction.entities.value_propositions) || []).join(', ') || 'growth opportunities'\n  }) }}\n}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "retell-trigger-call-013",
+      "name": "Retell AI - Trigger Voice Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Retell API Auth"
+        }
+      },
+      "notes": "Triggers Retell AI voice call with validated data and fallbacks"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-webhook-014",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2050, 300],
+      "notes": "Returns success response to initial webhook caller"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_logs",
+        "columns": {
+          "mappings": [
+            {
+              "column": "request_id",
+              "value": "={{ $json.requestId }}"
+            },
+            {
+              "column": "error_type",
+              "value": "={{ $json.error.name }}"
+            },
+            {
+              "column": "error_message",
+              "value": "={{ $json.error.message }}"
+            },
+            {
+              "column": "error_stack",
+              "value": "={{ $json.error.stack }}"
+            },
+            {
+              "column": "context",
+              "value": "={{ JSON.stringify($json) }}"
+            },
+            {
+              "column": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "column": "severity",
+              "value": "error"
+            }
+          ]
+        }
+      },
+      "id": "error-handler-015",
+      "name": "Error Handler - Log to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 500],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Connection"
+        }
+      },
+      "notes": "Catches and logs all errors to system_logs table",
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Webhook - Prospect Data Input": {
+      "main": [
+        [
+          {
+            "node": "JS - Validate & Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Validate & Sanitize Input": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Fetch Company Website",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP - Fetch LinkedIn Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Fetch Company Website": {
+      "main": [
+        [
+          {
+            "node": "WebScraper - Company Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Fetch LinkedIn Profile": {
+      "main": [
+        [
+          {
+            "node": "WebScraper - LinkedIn Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WebScraper - Company Website": {
+      "main": [
+        [
+          {
+            "node": "JS - Format Dynamic Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WebScraper - LinkedIn Profile": {
+      "main": [
+        [
+          {
+            "node": "JS - Format Dynamic Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Format Dynamic Prompt": {
+      "main": [
+        [
+          {
+            "node": "CODE - Call Gemini API Server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CODE - Call Gemini API Server": {
+      "main": [
+        [
+          {
+            "node": "JS - Validate AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Validate AI Response": {
+      "main": [
+        [
+          {
+            "node": "JS - Sentiment Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase - Store Prospect Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Sentiment Analysis": {
+      "main": [
+        [
+          {
+            "node": "JS - Entity Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Entity Extraction": {
+      "main": [
+        [
+          {
+            "node": "Email - Send via Brevo SMTP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Store Prospect Data": {
+      "main": [
+        [
+          {
+            "node": "Retell AI - Trigger Voice Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email - Send via Brevo SMTP": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retell AI - Trigger Voice Call": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler-015"
+  },
+  "active": true,
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-04T00:00:00.000Z",
+  "versionId": "1"
+}

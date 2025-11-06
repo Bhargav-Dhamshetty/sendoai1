@@ -1,0 +1,543 @@
+{
+  "name": "Sendora AI - Call Analysis & Retry",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "retell-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-retell-001",
+      "name": "Webhook - Retell AI Callback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "retell-call-webhook",
+      "notes": "Webhook URL: https://ram123499.app.n8n.cloud/webhook/retell-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate Retell AI webhook data\nconst webhookData = $input.item.json;\n\n// Handle different webhook data structures\nconst callId = webhookData.call_id || webhookData.callId || webhookData.id || `call_${Date.now()}`;\nconst callStatus = webhookData.call_status || webhookData.callStatus || webhookData.status || 'unknown';\n\n// Extract call data with fallbacks\nconst callData = {\n  callId: callId,\n  callStatus: callStatus,\n  duration: webhookData.call_duration || webhookData.duration || 0,\n  toNumber: webhookData.to_number || webhookData.toNumber || webhookData.phone_number || '',\n  fromNumber: webhookData.from_number || webhookData.fromNumber || '',\n  transcript: webhookData.transcript || webhookData.call_transcript || '',\n  recordingUrl: webhookData.recording_url || webhookData.recordingUrl || '',\n  metadata: webhookData.metadata || {},\n  startTime: webhookData.start_time || webhookData.startTime || '',\n  endTime: webhookData.end_time || webhookData.endTime || '',\n  disconnectReason: webhookData.disconnect_reason || webhookData.disconnectReason || '',\n  timestamp: new Date().toISOString()\n};\n\n// Determine if voicemail or human answered\nconst transcript = (callData.transcript || '').toLowerCase();\nconst voicemailIndicators = [\n  'voicemail',\n  'leave a message',\n  'not available',\n  'mailbox',\n  'beep',\n  'tone'\n];\n\nconst isVoicemail = voicemailIndicators.some(\n  indicator => transcript.includes(indicator)\n);\n\nconst isHumanAnswer = \n  callData.callStatus === 'completed' && \n  callData.duration > 30 && \n  !isVoicemail;\n\nconst callType = isVoicemail ? 'voicemail' : \n                 isHumanAnswer ? 'human' : \n                 'no_answer';\n\n// Enhanced call data\nconst enrichedCallData = {\n  ...callData,\n  callType,\n  isVoicemail,\n  isHumanAnswer,\n  requiresRetry: (callType === 'voicemail' || callType === 'no_answer') && callData.callStatus !== 'failed',\n  retryAttempt: parseInt(callData.metadata.retryAttempt || callData.metadata.retry_attempt || '0'),\n  requestId: callData.metadata.requestId || callData.metadata.request_id || webhookData.request_id || `req_${Date.now()}`,\n  prospectName: callData.metadata.prospectName || callData.metadata.prospect_name || 'Unknown',\n  companyName: callData.metadata.companyName || callData.metadata.company_name || 'Unknown'\n};\n\nreturn enrichedCallData;"
+      },
+      "id": "js-parse-call-data-002",
+      "name": "JS - Parse Call Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Parses webhook data and determines call type (human/voicemail/no-answer)"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Advanced Tone & Intent Analysis\nconst inputData = $input.item.json;\nconst transcript = (inputData.transcript || '').toLowerCase();\n\n// Initialize analysis results\nconst analysis = {\n  tone: 'neutral',\n  intent: 'unknown',\n  confidence: 0.0,\n  signals: [],\n  action_required: 'follow_up'\n};\n\n// Interested signals\nconst interestedKeywords = [\n  'interested', 'tell me more', 'sounds good', 'yes', 'sure',\n  'when can we', 'schedule', 'book', 'meeting', 'call back',\n  'send me', 'email me', 'information', 'demo', 'learn more'\n];\n\n// Rejected signals\nconst rejectedKeywords = [\n  'not interested', 'no thanks', 'remove', 'stop calling',\n  'dont call', \"don't want\", 'busy', 'have a solution',\n  'already working', 'not looking', 'waste of time'\n];\n\n// Booked signals\nconst bookedKeywords = [\n  'book', 'schedule', 'confirm', 'calendar', 'appointment',\n  'meeting', 'tuesday', 'wednesday', 'thursday', 'monday', 'friday',\n  'tomorrow', 'next week', 'available', 'works for me'\n];\n\n// Count keyword matches\nconst interestedCount = interestedKeywords.filter(kw => transcript.includes(kw)).length;\nconst rejectedCount = rejectedKeywords.filter(kw => transcript.includes(kw)).length;\nconst bookedCount = bookedKeywords.filter(kw => transcript.includes(kw)).length;\n\n// Determine tone and intent\nif (bookedCount >= 2) {\n  analysis.tone = 'positive';\n  analysis.intent = 'booked';\n  analysis.confidence = Math.min(0.95, 0.7 + (bookedCount * 0.1));\n  analysis.signals = bookedKeywords.filter(kw => transcript.includes(kw));\n  analysis.action_required = 'send_confirmation';\n} else if (interestedCount > rejectedCount && interestedCount >= 2) {\n  analysis.tone = 'positive';\n  analysis.intent = 'interested';\n  analysis.confidence = Math.min(0.9, 0.6 + (interestedCount * 0.1));\n  analysis.signals = interestedKeywords.filter(kw => transcript.includes(kw));\n  analysis.action_required = 'schedule_follow_up';\n} else if (rejectedCount > interestedCount) {\n  analysis.tone = 'negative';\n  analysis.intent = 'rejected';\n  analysis.confidence = Math.min(0.95, 0.7 + (rejectedCount * 0.1));\n  analysis.signals = rejectedKeywords.filter(kw => transcript.includes(kw));\n  analysis.action_required = 'mark_as_lost';\n} else {\n  analysis.tone = 'neutral';\n  analysis.intent = 'unclear';\n  analysis.confidence = 0.3;\n  analysis.signals = [];\n  analysis.action_required = 'manual_review';\n}\n\n// Additional metrics\nconst wordCount = transcript.split(/\\s+/).filter(w => w.length > 0).length;\nanalysis.metrics = {\n  transcript_length: transcript.length,\n  word_count: wordCount,\n  interested_score: interestedCount,\n  rejected_score: rejectedCount,\n  booked_score: bookedCount,\n  engagement_level: wordCount > 100 ? 'high' : (wordCount > 30 ? 'medium' : 'low')\n};\n\n// Sentiment score (-1 to 1)\nconst totalKeywords = interestedCount + rejectedCount + bookedCount;\nconst sentimentScore = totalKeywords > 0 \n  ? (interestedCount + bookedCount - rejectedCount) / totalKeywords \n  : 0;\nanalysis.sentiment_score = Math.round(sentimentScore * 100) / 100;\n\nreturn { ...inputData, toneAnalysis: analysis };"
+      },
+      "id": "python-tone-analysis-003",
+      "name": "JS - Tone & Intent Analysis",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "notes": "Analyzes transcript to detect: Interested, Rejected, or Booked (converted from Python)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.toneAnalysis.intent }}",
+              "rightValue": "booked",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-booked-004",
+      "name": "IF - Appointment Booked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 200],
+      "notes": "Routes to Cal.com if appointment was booked"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cal.com/v1/bookings",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer cal_live_cb45b03bd46f8c05163beb474b12cbcb"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "eventTypeId",
+              "value": "YOUR_CAL_COM_EVENT_TYPE_ID"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.prospectName || 'Unknown Prospect' }}"
+            },
+            {
+              "name": "email",
+              "value": "={{ ($json.metadata && $json.metadata.email && $json.metadata.email.includes('@')) ? $json.metadata.email : 'noemail@example.com' }}"
+            },
+            {
+              "name": "notes",
+              "value": "Booked via Retell AI call. Call ID: {{ $json.callId }}. Transcript: {{ $json.transcript.substring(0, 500) }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ JSON.stringify({ source: 'retell_ai', callId: $json.callId, companyName: $json.companyName }) }}"
+            }
+          ]
+        }
+      },
+      "id": "calcom-book-005",
+      "name": "Cal.com - Create Booking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 100],
+      "notes": "Creates appointment in Cal.com when call is booked"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.requiresRetry }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "leftValue": "={{ $json.retryAttempt }}",
+              "rightValue": "1",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-retry-006",
+      "name": "IF - Should Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 400],
+      "notes": "Checks if call hit voicemail/no-answer and retry count < 1"
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 15
+      },
+      "id": "wait-retry-007",
+      "name": "Wait - 15 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1050, 400],
+      "webhookId": "wait-for-retry",
+      "notes": "Waits 15 minutes before retry attempt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.retellai.com/v2/create-phone-call",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "retellAiApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"agent_id\": \"agent_ea295365c16d68879208dc6bba\",\n  \"llm_id\": \"llm_5d00b1f3905454099e169d886c32\",\n  \"from_number\": \"+1YOUR_RETELL_PHONE\",\n  \"to_number\": \"{{ $json.toNumber }}\",\n  \"voice_id\": \"11labs-Adrian\",\n  \"metadata\": {\n    \"prospect_name\": \"{{ $json.prospectName }}\",\n    \"company_name\": \"{{ $json.companyName }}\",\n    \"request_id\": \"{{ $json.requestId }}\",\n    \"retry_attempt\": \"{{ $json.retryAttempt + 1 }}\"\n  },\n  \"webhook_url\": \"https://ram123499.app.n8n.cloud/webhook/retell-webhook\"\n}",
+        "options": {}
+      },
+      "id": "retry-call-008",
+      "name": "Retell AI - Retry Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400],
+      "credentials": {
+        "retellAiApi": {
+          "name": "Retell API Auth"
+        }
+      },
+      "notes": "Retry attempt with Retell AI - Agent: agent_ea295365c16d68879208dc6bba, LLM: llm_5d00b1f3905454099e169d886c32"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "call_logs",
+        "columns": {
+          "mappings": [
+            {
+              "column": "call_id",
+              "value": "={{ $json.callId }}"
+            },
+            {
+              "column": "request_id",
+              "value": "={{ $json.requestId }}"
+            },
+            {
+              "column": "prospect_name",
+              "value": "={{ $json.prospectName }}"
+            },
+            {
+              "column": "company_name",
+              "value": "={{ $json.companyName }}"
+            },
+            {
+              "column": "to_number",
+              "value": "={{ $json.toNumber }}"
+            },
+            {
+              "column": "from_number",
+              "value": "={{ $json.fromNumber }}"
+            },
+            {
+              "column": "call_status",
+              "value": "={{ $json.callStatus }}"
+            },
+            {
+              "column": "call_type",
+              "value": "={{ $json.callType }}"
+            },
+            {
+              "column": "duration",
+              "value": "={{ $json.duration }}"
+            },
+            {
+              "column": "transcript",
+              "value": "={{ $json.transcript }}"
+            },
+            {
+              "column": "recording_url",
+              "value": "={{ $json.recordingUrl }}"
+            },
+            {
+              "column": "tone",
+              "value": "={{ $json.toneAnalysis.tone }}"
+            },
+            {
+              "column": "intent",
+              "value": "={{ $json.toneAnalysis.intent }}"
+            },
+            {
+              "column": "confidence",
+              "value": "={{ $json.toneAnalysis.confidence }}"
+            },
+            {
+              "column": "sentiment_score",
+              "value": "={{ $json.toneAnalysis.sentiment_score }}"
+            },
+            {
+              "column": "engagement_level",
+              "value": "={{ $json.toneAnalysis.metrics.engagement_level }}"
+            },
+            {
+              "column": "retry_attempt",
+              "value": "={{ $json.retryAttempt }}"
+            },
+            {
+              "column": "timestamp",
+              "value": "={{ $json.timestamp }}"
+            },
+            {
+              "column": "call_date",
+              "value": "={{ $json.timestamp.split('T')[0] }}"
+            }
+          ]
+        }
+      },
+      "id": "supabase-store-call-009",
+      "name": "Supabase - Store Call Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Connection"
+        }
+      },
+      "notes": "Stores complete call data, transcript, and analysis"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=-- Aggregate daily metrics\nWITH daily_stats AS (\n  SELECT \n    call_date,\n    COUNT(*) as total_calls,\n    COUNT(CASE WHEN call_type = 'human' THEN 1 END) as pickups,\n    COUNT(CASE WHEN intent = 'rejected' THEN 1 END) as rejections,\n    COUNT(CASE WHEN intent = 'booked' THEN 1 END) as appointments,\n    AVG(duration) as avg_duration,\n    AVG(confidence) as avg_confidence\n  FROM call_logs\n  WHERE call_date = CURRENT_DATE\n  GROUP BY call_date\n)\nINSERT INTO daily_call_metrics (\n  metric_date, total_calls, pickups, rejections, \n  appointments, avg_duration, avg_confidence, \n  pickup_rate, appointment_rate, timestamp\n)\nSELECT \n  call_date,\n  total_calls,\n  pickups,\n  rejections,\n  appointments,\n  avg_duration,\n  avg_confidence,\n  ROUND((pickups::float / NULLIF(total_calls, 0)) * 100, 2) as pickup_rate,\n  ROUND((appointments::float / NULLIF(total_calls, 0)) * 100, 2) as appointment_rate,\n  NOW()\nFROM daily_stats\nON CONFLICT (metric_date) \nDO UPDATE SET\n  total_calls = EXCLUDED.total_calls,\n  pickups = EXCLUDED.pickups,\n  rejections = EXCLUDED.rejections,\n  appointments = EXCLUDED.appointments,\n  avg_duration = EXCLUDED.avg_duration,\n  avg_confidence = EXCLUDED.avg_confidence,\n  pickup_rate = EXCLUDED.pickup_rate,\n  appointment_rate = EXCLUDED.appointment_rate,\n  timestamp = NOW();"
+      },
+      "id": "supabase-update-metrics-010",
+      "name": "Supabase - Update Daily Metrics",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Connection"
+        }
+      },
+      "notes": "Aggregates and updates daily call metrics: calls, pickups, rejections, appointments"
+    },
+    {
+      "parameters": {
+        "fromEmail": "mechconect18@gmail.com",
+        "toEmail": "godbhargav@gmail.com",
+        "subject": "📞 Call Completed: {{ ($json.toneAnalysis && $json.toneAnalysis.intent && $json.toneAnalysis.intent.toUpperCase()) || 'UNKNOWN' }} - {{ $json.prospectName || 'Unknown' }}",
+        "emailType": "html",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; padding: 20px; }\n    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center; }\n    .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; }\n    .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0; }\n    .metric-box { background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; }\n    .metric-label { font-size: 12px; color: #666; text-transform: uppercase; }\n    .metric-value { font-size: 24px; font-weight: bold; color: #333; }\n    .transcript-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; max-height: 300px; overflow-y: auto; }\n    .status-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; font-size: 14px; font-weight: bold; }\n    .status-booked { background: #28a745; color: white; }\n    .status-interested { background: #ffc107; color: #333; }\n    .status-rejected { background: #dc3545; color: white; }\n    .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>📞 Call Analysis Report</h1>\n    <p>{{ $json.prospectName || 'Unknown' }} - {{ $json.companyName || 'Unknown Company' }}</p>\n  </div>\n  \n  <div class=\"content\">\n    <div style=\"text-align: center; margin: 20px 0;\">\n      <span class=\"status-badge status-{{ ($json.toneAnalysis && $json.toneAnalysis.intent) || 'unknown' }}\">{{ (($json.toneAnalysis && $json.toneAnalysis.intent) || 'UNKNOWN').toUpperCase() }}</span>\n    </div>\n    \n    <div class=\"metric-grid\">\n      <div class=\"metric-box\">\n        <div class=\"metric-label\">Call Type</div>\n        <div class=\"metric-value\">{{ $json.callType || 'unknown' }}</div>\n      </div>\n      <div class=\"metric-box\">\n        <div class=\"metric-label\">Duration</div>\n        <div class=\"metric-value\">{{ Math.floor(($json.duration || 0) / 60) }}m {{ ($json.duration || 0) % 60 }}s</div>\n      </div>\n      <div class=\"metric-box\">\n        <div class=\"metric-label\">Tone</div>\n        <div class=\"metric-value\">{{ ($json.toneAnalysis && $json.toneAnalysis.tone) || 'neutral' }}</div>\n      </div>\n      <div class=\"metric-box\">\n        <div class=\"metric-label\">Confidence</div>\n        <div class=\"metric-value\">{{ Math.round((($json.toneAnalysis && $json.toneAnalysis.confidence) || 0) * 100) }}%</div>\n      </div>\n    </div>\n    \n    <h3>📊 Analysis Summary</h3>\n    <ul>\n      <li><strong>Intent:</strong> {{ ($json.toneAnalysis && $json.toneAnalysis.intent) || 'unknown' }}</li>\n      <li><strong>Sentiment Score:</strong> {{ ($json.toneAnalysis && $json.toneAnalysis.sentiment_score) || 0 }}</li>\n      <li><strong>Engagement Level:</strong> {{ ($json.toneAnalysis && $json.toneAnalysis.metrics && $json.toneAnalysis.metrics.engagement_level) || 'low' }}</li>\n      <li><strong>Action Required:</strong> {{ ($json.toneAnalysis && $json.toneAnalysis.action_required) || 'manual_review' }}</li>\n      <li><strong>Key Signals:</strong> {{ (($json.toneAnalysis && $json.toneAnalysis.signals) || []).join(', ') || 'None detected' }}</li>\n    </ul>\n    \n    <h3>📝 Call Transcript</h3>\n    <div class=\"transcript-box\">\n      <p>{{ $json.transcript || 'No transcript available' }}</p>\n    </div>\n    \n    {% if $json.recordingUrl %}\n    <p><strong>🎵 Recording:</strong> <a href=\"{{ $json.recordingUrl }}\">Listen to Call</a></p>\n    {% endif %}\n    \n    <div style=\"background: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 20px;\">\n      <h4>📈 Next Steps:</h4>\n      <p>{{ ($json.toneAnalysis && $json.toneAnalysis.action_required === 'send_confirmation') ? 'Send appointment confirmation email' :\n         ($json.toneAnalysis && $json.toneAnalysis.action_required === 'schedule_follow_up') ? 'Schedule follow-up call or email' :\n         ($json.toneAnalysis && $json.toneAnalysis.action_required === 'mark_as_lost') ? 'Mark prospect as lost in CRM' :\n         'Manually review call and determine next action' }}</p>\n    </div>\n  </div>\n  \n  <div class=\"footer\">\n    <p>Call ID: {{ $json.callId || 'unknown' }} | Request ID: {{ $json.requestId || 'unknown' }}</p>\n    <p>Sendora AI - Powered by Retell AI | {{ $now.format('YYYY') }}</p>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "email-call-report-011",
+      "name": "Email - Send Call Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1450, 200],
+      "credentials": {
+        "smtp": {
+          "name": "Brevo SMTP Connection"
+        }
+      },
+      "notes": "Sends detailed call analysis report with validated data"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-webhook-012",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "notes": "Returns 200 OK to Retell AI webhook"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_logs",
+        "columns": {
+          "mappings": [
+            {
+              "column": "request_id",
+              "value": "={{ $json.requestId || 'unknown' }}"
+            },
+            {
+              "column": "error_type",
+              "value": "call_analysis_error"
+            },
+            {
+              "column": "error_message",
+              "value": "={{ $json.error.message }}"
+            },
+            {
+              "column": "error_stack",
+              "value": "={{ $json.error.stack }}"
+            },
+            {
+              "column": "context",
+              "value": "={{ JSON.stringify($json) }}"
+            },
+            {
+              "column": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "column": "severity",
+              "value": "error"
+            }
+          ]
+        }
+      },
+      "id": "error-handler-013",
+      "name": "Error Handler - Log Errors",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 600],
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase Connection"
+        }
+      },
+      "notes": "Logs all errors to system_logs table",
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Webhook - Retell AI Callback": {
+      "main": [
+        [
+          {
+            "node": "JS - Parse Call Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Parse Call Data": {
+      "main": [
+        [
+          {
+            "node": "JS - Tone & Intent Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS - Tone & Intent Analysis": {
+      "main": [
+        [
+          {
+            "node": "IF - Appointment Booked?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - Should Retry?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase - Store Call Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Appointment Booked?": {
+      "main": [
+        [
+          {
+            "node": "Cal.com - Create Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Should Retry?": {
+      "main": [
+        [
+          {
+            "node": "Wait - 15 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Retell AI - Retry Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Store Call Data": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Update Daily Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Update Daily Metrics": {
+      "main": [
+        [
+          {
+            "node": "Email - Send Call Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cal.com - Create Booking": {
+      "main": [
+        [
+          {
+            "node": "Email - Send Call Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email - Send Call Report": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retell AI - Retry Call": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler-013"
+  },
+  "active": true,
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-04T00:00:00.000Z",
+  "versionId": "1"
+}

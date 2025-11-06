@@ -1,0 +1,123 @@
+{
+  "info": {
+    "name": "Sendora AI - Gemini API",
+    "description": "Complete API collection for testing the Gemini Key Rotating Prompt Server",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Generate AI Response",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"Write a short poem about artificial intelligence\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/generate",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["generate"]
+        },
+        "description": "Generate AI response from a text prompt"
+      }
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["health"]
+        },
+        "description": "Check system health and available keys"
+      }
+    },
+    {
+      "name": "Get Statistics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/stats",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["stats"]
+        },
+        "description": "Get detailed usage statistics for all API keys"
+      }
+    },
+    {
+      "name": "Test Email Alert",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/test-email",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["test-email"]
+        },
+        "description": "Send a test email to verify email configuration"
+      }
+    },
+    {
+      "name": "Reset All Limits",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/reset-limits",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["reset-limits"]
+        },
+        "description": "Reset rate limits for all API keys"
+      }
+    },
+    {
+      "name": "Reset Specific Key Limit",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/reset-limit/GEMINI_KEY_5",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["reset-limit", "GEMINI_KEY_5"]
+        },
+        "description": "Reset rate limit for a specific key"
+      }
+    },
+    {
+      "name": "Root - API Info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": [""]
+        },
+        "description": "Get API information and available endpoints"
+      }
+    }
+  ]
+}

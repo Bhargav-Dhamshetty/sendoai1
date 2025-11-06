@@ -1,0 +1,110 @@
+{
+  "name": "DEBUG TEST - Show API Response",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-debug",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "test-debug-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sendo-wine.vercel.app/generate",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: 'Generate 3 LinkedIn messages for Jane Smith at TechCorp. Format as JSON: {\"message1\": \"...\", \"message2\": \"...\", \"message3\": \"...\"}' }) }}",
+        "options": {}
+      },
+      "id": "http-001",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Show EXACTLY what HTTP returned\nconst data = $input.item.json;\n\nreturn {\n  raw_data: JSON.stringify(data, null, 2),\n  keys: Object.keys(data).join(', '),\n  success: data.success,\n  response: data.response,\n  message1: data.response?.message1 || 'NOT FOUND',\n  message2: data.response?.message2 || 'NOT FOUND',\n  message3: data.response?.message3 || 'NOT FOUND'\n};"
+      },
+      "id": "debug-001",
+      "name": "Debug",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "mechconect18@gmail.com",
+        "toEmail": "godbhargav@gmail.com",
+        "subject": "=DEBUG - API Response",
+        "emailType": "html",
+        "text": "",
+        "html": "=<h1>DEBUG API Response</h1><h2>Keys Found:</h2><p>{{ $json.keys }}</p><h2>Success:</h2><p>{{ $json.success }}</p><h2>Message 1:</h2><p>{{ $json.message1 }}</p><h2>Message 2:</h2><p>{{ $json.message2 }}</p><h2>Message 3:</h2><p>{{ $json.message3 }}</p><h2>Raw Data:</h2><pre>{{ $json.raw_data }}</pre>",
+        "options": {}
+      },
+      "id": "email-001",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "credentials": {
+        "smtp": {
+          "name": "Brevo SMTP Connection"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Debug",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-05T08:00:00.000Z",
+  "versionId": "1"
+}

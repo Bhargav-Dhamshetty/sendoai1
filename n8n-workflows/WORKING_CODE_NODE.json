@@ -1,0 +1,83 @@
+{
+  "name": "WORKING - Code Node HTTP",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-working",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "test-working-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Use n8n's built-in $http helper\nconst prompt = 'Generate 3 LinkedIn messages for Jane Smith at TechCorp. Format as JSON: {\"message1\": \"...\", \"message2\": \"...\", \"message3\": \"...\"}';\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://sendo-wine.vercel.app/generate',\n    body: {\n      prompt: prompt\n    },\n    json: true\n  });\n  \n  return [{\n    json: {\n      api_success: response.success,\n      message1: response.response?.message1 || 'NOT FOUND',\n      message2: response.response?.message2 || 'NOT FOUND',\n      message3: response.response?.message3 || 'NOT FOUND',\n      full_response: response\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      error_message: error.message,\n      api_success: false,\n      message1: 'ERROR: ' + error.message,\n      message2: 'Check n8n execution logs',\n      message3: 'for details'\n    }\n  }];\n}"
+      },
+      "id": "code-001",
+      "name": "Fetch API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "mechconect18@gmail.com",
+        "toEmail": "godbhargav@gmail.com",
+        "subject": "=✅ WORKING - AI Messages",
+        "emailType": "html",
+        "text": "",
+        "html": "=<h1>🎉 It Works!</h1>\n<h2>DEBUG INFO:</h2>\n<p><strong>Keys in $json:</strong> {{ Object.keys($json).join(', ') }}</p>\n<p><strong>Full $json:</strong></p>\n<pre>{{ JSON.stringify($json, null, 2) }}</pre>\n<hr>\n<h2>API Success: {{ $json.api_success }}</h2>\n<h3>Message 1:</h3>\n<p>{{ $json.message1 }}</p>\n<h3>Message 2:</h3>\n<p>{{ $json.message2 }}</p>\n<h3>Message 3:</h3>\n<p>{{ $json.message3 }}</p>",
+        "options": {}
+      },
+      "id": "email-001",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "credentials": {
+        "smtp": {
+          "name": "Brevo SMTP Connection"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch API": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-05T08:05:00.000Z",
+  "versionId": "1"
+}

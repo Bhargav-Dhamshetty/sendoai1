@@ -1,0 +1,89 @@
+{
+  "name": "SIMPLE TEST - Direct API Call",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-simple",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "test-simple-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sendo-wine.vercel.app/generate",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: 'Generate 3 LinkedIn messages for Jane Smith at TechCorp. Format as JSON: {\"message1\": \"...\", \"message2\": \"...\", \"message3\": \"...\"}' }) }}",
+        "options": {}
+      },
+      "id": "http-001",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "mechconect18@gmail.com",
+        "toEmail": "godbhargav@gmail.com",
+        "subject": "=TEST - API Response",
+        "emailType": "html",
+        "text": "",
+        "html": "=<h1>API Test Result</h1><h2>Success: {{ $json.success }}</h2><h3>Message 1:</h3><p>{{ $json.response.message1 }}</p><h3>Message 2:</h3><p>{{ $json.response.message2 }}</p><h3>Message 3:</h3><p>{{ $json.response.message3 }}</p><h3>Full Response:</h3><pre>{{ JSON.stringify($json, null, 2) }}</pre>",
+        "options": {}
+      },
+      "id": "email-001",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "credentials": {
+        "smtp": {
+          "name": "Brevo SMTP Connection"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-05T07:30:00.000Z",
+  "versionId": "1"
+}
