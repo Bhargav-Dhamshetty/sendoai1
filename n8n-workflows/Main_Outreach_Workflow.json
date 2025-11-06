@@ -160,7 +160,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Use n8n's built-in HTTP helper to call Gemini API\nconst prospectData = $input.item.json;\nconst prompt = prospectData.geminiPayload.prompt;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://sendo-wine.vercel.app/generate',\n    body: {\n      prompt: prompt\n    },\n    json: true\n  });\n  \n  return [{\n    json: {\n      ...prospectData,\n      success: response.success,\n      response: response.response,\n      keyUsed: response.keyUsed,\n      processingTime: response.duration\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      ...prospectData,\n      success: false,\n      error: error.message,\n      response: null\n    }\n  }];\n}\n"
+        "jsCode": "// Use n8n's built-in HTTP helper to call Gemini API\nconst prospectData = $input.item.json;\nconst prompt = prospectData.geminiPayload.prompt;\n\ntry {\n  const response = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://sendo-fde4b527a-bhargav-dhamshettys-projects.vercel.app/generate',\n    body: {\n      prompt: prompt\n    },\n    json: true\n  });\n  \n  return [{\n    json: {\n      ...prospectData,\n      success: response.success,\n      response: response.response,\n      keyUsed: response.keyUsed,\n      processingTime: response.duration\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      ...prospectData,\n      success: false,\n      error: error.message,\n      response: null\n    }\n  }];\n}\n"
       },
       "id": "http-gemini-api-006",
       "name": "CODE - Call Gemini API Server",
