@@ -230,13 +230,13 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {Math.floor(call.call_duration / 60)}m {call.call_duration % 60}s
+                        {call.call_duration ? `${Math.floor(call.call_duration / 60)}m ${call.call_duration % 60}s` : 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {call.sentiment_score.toFixed(1)}
+                        {call.sentiment_score ? call.sentiment_score.toFixed(1) : 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {format(new Date(call.created_at), 'MMM dd, HH:mm')}
+                        {call.created_at ? format(new Date(call.created_at), 'MMM dd, HH:mm') : 'N/A'}
                       </td>
                     </tr>
                   ))}

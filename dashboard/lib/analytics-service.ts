@@ -28,9 +28,21 @@ export class AnalyticsService {
       const totalCalls = metrics.length;
       const totalPickups = metrics.filter(m => m.pickup_status === 'picked_up').length;
       const totalAppointments = metrics.filter(m => m.appointment_booked).length;
-      const avgDuration = metrics.reduce((sum, m) => sum + m.call_duration, 0) / totalCalls || 0;
-      const avgSentiment = metrics.reduce((sum, m) => sum + m.sentiment_score, 0) / totalCalls || 0;
-      const avgConfidence = metrics.reduce((sum, m) => sum + m.confidence_score, 0) / totalCalls || 0;
+      
+      // Handle null values safely
+      const validDurations = metrics.filter(m => m.call_duration != null);
+      const validSentiments = metrics.filter(m => m.sentiment_score != null);
+      const validConfidence = metrics.filter(m => m.confidence_score != null);
+      
+      const avgDuration = validDurations.length > 0 
+        ? validDurations.reduce((sum, m) => sum + m.call_duration, 0) / validDurations.length 
+        : 0;
+      const avgSentiment = validSentiments.length > 0
+        ? validSentiments.reduce((sum, m) => sum + m.sentiment_score, 0) / validSentiments.length
+        : 0;
+      const avgConfidence = validConfidence.length > 0
+        ? validConfidence.reduce((sum, m) => sum + m.confidence_score, 0) / validConfidence.length
+        : 0;
 
       return {
         totalCalls,
@@ -67,20 +79,23 @@ export class AnalyticsService {
         .lte('date', format(end, 'yyyy-MM-dd'))
         .order('date', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching chart data:', error);
+        return [];
+      }
 
       const metrics = data as DailyCallMetric[];
 
       return metrics.map(m => ({
         date: format(new Date(m.date), 'MMM dd'),
-        calls: m.total_calls,
-        pickups: m.total_pickups,
-        appointments: m.total_appointments,
-        sentiment: Math.round(m.avg_sentiment_score * 100) / 100,
+        calls: m.total_calls || 0,
+        pickups: m.total_pickups || 0,
+        appointments: m.total_appointments || 0,
+        sentiment: m.avg_sentiment_score ? Math.round(m.avg_sentiment_score * 100) / 100 : 0,
       }));
     } catch (error) {
       console.error('Error fetching chart data:', error);
-      throw error;
+      return [];
     }
   }
 
